@@ -1,0 +1,17 @@
+# R / RStudio
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rproj
+
+# Python/bytecode (if any)
+__pycache__/
+*.py[cod]
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
