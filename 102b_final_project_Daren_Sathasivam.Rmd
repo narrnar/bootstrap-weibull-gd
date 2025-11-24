@@ -1,0 +1,498 @@
+---
+title: "102B Final Project"
+author: "Daren Sathasivam -- 306229580"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+# From stackexchange
+library(formatR)
+library(knitr)
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 60), tidy = TRUE)
+```
+
+# Problem 1:
+Consider a random variable X from a Weibull distribution. THis distribution is extensively used in material science and industrial statistics, since it can model well the "aging" process of materials and componenets on physical systems.\
+*Hint:* To generate a random sample s of size n from a Weibull distribution with shape parameter k and scale parameter $\lambda$ use the following command:
+```{r}
+# s = rweibull(n, shape = k, scale = lambda)
+```
+
+
+## Part (a):
+Evaluate the **convergence probability** and **average length** of the following **95% confidence intervals** for the **population median** based on random samples of size n = 100 and 250, drawn from a **Weibull distribution with shape parameter** k = 1.5 and **scale parameter** $\lambda = 1$. \
+Your results should be based on M = 100, 500 random samples and B = 5000 bootstrap replicates.
+```{r}
+set.seed(100)
+# Load helper functions
+source("bootsample.R")
+source("bootstats.R")
+library(boot)
+
+# Set parameters
+n_sizes <- c(100, 250)
+M_values <- c(100, 500)
+k <- 1.5
+lambda <- 1
+B <- 5000
+alpha <- 0.05
+true_median <- lambda * (log(2))^(1/k)
+
+# Function to generate Weibull samples
+generate_sample <- function(n) {
+  rweibull(n, shape = k, scale = lambda)
+}
+
+# Function to calculate medians for bootstrap samples
+median_fun <- function(data) {
+  median(data)
+}
+
+# Function to calculate confidence intervals
+calculate_cis <- function(sample) {
+  bootstrap_samples <- bootsampling(sample, B)
+  boot_results <- boot.stats(bootstrap_samples, median_fun)
+  
+  t0 <- median(sample)
+  se <- boot_results$se
+  z <- qnorm(1 - alpha / 2)
+  
+  # Normal CI
+  normal_ci <- c(t0 - z * se, t0 + z * se)
+  # Basic CI
+  basic_ci <- c(2 * t0 - quantile(boot_results$theta, 1 - alpha / 2),
+                2 * t0 - quantile(boot_results$theta, alpha / 2))
+  # Percentile CI
+  percentile_ci <- quantile(boot_results$theta, c(alpha / 2, 1 - alpha / 2))
+  # Studentized CI
+  studentized_ci <- c(t0 - z * se, t0 + z * se) 
+  
+  return(list(normal = normal_ci, basic = basic_ci, percentile = percentile_ci, studentized = studentized_ci))
+}
+
+# Simulation function to evaluate CIs
+evaluate_cis <- function(n, M) {
+  coverage <- matrix(0, ncol = 4, nrow = M)
+  lengths <- matrix(0, ncol = 4, nrow = M)
+  last_cis <- NULL
+  
+  for (i in 1:M) {
+    sample <- generate_sample(n)
+    cis <- calculate_cis(sample)
+    
+    for (j in seq_along(cis)) {
+      ci <- cis[[names(cis)[j]]]
+      # Check if true median is within CI
+      coverage[i, j] <- ci[1] <= true_median && ci[2] >= true_median
+      # Get length of CI
+      lengths[i, j] <- ci[2] - ci[1]
+    }
+    last_cis <- cis
+  }
+  # Print CIs
+  cat("\nConfidence Intervals for n =", n, "and M =", M, ":\n")
+  for (ci_name in names(last_cis)) {
+    ci <- last_cis[[ci_name]]
+    cat(ci_name, "CI: [", format(ci[1], digits = 4), ", ", format(ci[2], digits = 4), "]\n")
+  }
+  
+  # Average out
+  list(coverage = colMeans(coverage), length = colMeans(lengths))
+}
+
+# Place results into table
+results <- matrix(nrow = 8, ncol = 4)
+colnames(results) <- c("Normal", "Basic", "Percentile", "Studentized")
+rownames(results) <- c("Coverage (n=100, M=100)", "Length (n=100, M=100)", 
+                       "Coverage (n=100, M=500)", "Length (n=100, M=500)",
+                       "Coverage (n=250, M=100)", "Length (n=250, M=100)",
+                       "Coverage (n=250, M=500)", "Length (n=250, M=500)")
+
+index <- 1
+for (n in n_sizes) {
+  for (M in M_values) {
+    sim_results <- evaluate_cis(n, M)
+    results[index, ] <- sim_results$coverage
+    results[index + 1, ] <- sim_results$length
+    index <- index + 2
+  }
+}
+
+# Output results
+print(results)
+```
+
+Provide a description of your simulation focusing on how you calculated the coverage probability and average length of each type of confidence interval, a summary of your findings with comments, and your R code and output.\
+
+Your findings should be organized in a table, where the columns correspond to the different types of bootstrap confidence intervals and the rows to the coverage probability and the average length for each of the n, M combination. Hence, your table should have 8 rows and 4 columns with clear description of each one. \
+- It was given that the true median of the Weibull function is $median(X) =  \lambda [log(2)]^{\dfrac{1}{k}}$. Using this, the simulation was designed to test each of the four types of bootstrap confidence intervals with the Weibull distribution with the shape parameter $k = 1.5$ and scale parameter $\lambda = 1$. The Normal, Basic, Percentile, and Studentized bootstrap calculations were calculated using the examples from week 1 and week 2 lectures. The coverage probability was calculated by the proportion of confidence intervals that contained the true median across all simulations. The average length was calculated as the mean of the widths of each type of confidence interval across all simulations. The coverage probabilities for the sample sizes of 100 were clearly smaller than the sample sizes of 250, which indicates that the confidence intervals are more accurate with larger sample sizes. Additionally, it can be observed that the percentile bootstrap CIs had a relatively larger coverage probability, indicating that the percentile bootstrap CI may be the most efficient for this simulation. The average lengths among the four types are relatively similar. However, as the sample size increased, it can be observed that the average lengths decreased, indicating that the larger sample size resulted in more precise estimates. 
+
+## Part(b):
+Evaluate the **convergence probability** and **average length** of the following **95% confidence intervals** for the **population standard deviation** based on random samples of size n = 100 and 250, drawn from a **Weibull distribution with shape parameter** k = 1.5 and **scale parameter** $\lambda = 1$. \
+Your results should be based on M = 100, 500 random samples and B = 5000 bootstrap replicates. \
+```{r}
+set.seed(100)
+# Load helper functions
+source("bootsample.R")
+source("bootstats.R")
+library(boot)
+
+# Set parameters
+n_sizes <- c(100, 250)
+M_values <- c(100, 500)
+k <- 1.5
+lambda <- 1
+B <- 5000
+alpha <- 0.05
+true_sd <- sqrt(lambda^2 * (gamma(1 + 2 / k) - (gamma(1 + 1 / k))^2))
+
+# Function to generate Weibull samples
+generate_sample <- function(n) {
+  rweibull(n, shape = k, scale = lambda)
+}
+
+# Function to calculate standard deviation for bootstrap samples
+sd_fun <- function(data) {
+  sd(data)
+}
+
+# Function to calculate confidence intervals
+calculate_cis <- function(sample) {
+  bootstrap_samples <- bootsampling(sample, B)
+  boot_results <- boot.stats(bootstrap_samples, sd_fun)
+  
+  t0 <- sd(sample)
+  se <- boot_results$se
+  z <- qnorm(1 - alpha / 2)
+  
+  # Normal CI
+  normal_ci <- c(t0 - z * se, t0 + z * se)
+  # Basic CI
+  basic_ci <- c(2 * t0 - quantile(boot_results$theta, 1 - alpha / 2),
+                2 * t0 - quantile(boot_results$theta, alpha / 2))
+  # Percentile CI
+  percentile_ci <- quantile(boot_results$theta, c(alpha / 2, 1 - alpha / 2))
+  # Studentized CI
+  studentized_ci <- c(t0 - z * se, t0 + z * se) 
+  
+  return(list(normal = normal_ci, basic = basic_ci, percentile = percentile_ci, studentized = studentized_ci))
+}
+
+# Simulation function to evaluate CIs
+evaluate_cis <- function(n, M) {
+  coverage <- matrix(0, ncol = 4, nrow = M)
+  lengths <- matrix(0, ncol = 4, nrow = M)
+  last_cis <- NULL
+  
+  for (i in 1:M) {
+    sample <- generate_sample(n)
+    cis <- calculate_cis(sample)
+    
+    for (j in seq_along(cis)) {
+      ci <- cis[[names(cis)[j]]]
+      # Check if true median is within CI
+      coverage[i, j] <- ci[1] <= true_sd && ci[2] >= true_sd
+      # Get length of CI
+      lengths[i, j] <- ci[2] - ci[1]
+    }
+    last_cis <- cis
+  }
+  # Print CIs
+  cat("\nConfidence Intervals for n =", n, "and M =", M, ":\n")
+  for (ci_name in names(last_cis)) {
+    ci <- last_cis[[ci_name]]
+    cat(ci_name, "CI: [", format(ci[1], digits = 4), ", ", format(ci[2], digits = 4), "]\n")
+  }
+  
+  # Average out
+  list(coverage = colMeans(coverage), length = colMeans(lengths))
+}
+
+# Place results into table
+results <- matrix(nrow = 8, ncol = 4)
+colnames(results) <- c("Normal", "Basic", "Percentile", "Studentized")
+rownames(results) <- c("Coverage (n=100, M=100)", "Length (n=100, M=100)", 
+                       "Coverage (n=100, M=500)", "Length (n=100, M=500)",
+                       "Coverage (n=250, M=100)", "Length (n=250, M=100)",
+                       "Coverage (n=250, M=500)", "Length (n=250, M=500)")
+
+index <- 1
+for (n in n_sizes) {
+  for (M in M_values) {
+    sim_results <- evaluate_cis(n, M)
+    results[index, ] <- sim_results$coverage
+    results[index + 1, ] <- sim_results$length
+    index <- index + 2
+  }
+}
+
+# Output results
+print(results)
+```
+
+Provide a description of your simulation focusing on how you calculated the coverage probability and average length of each type of confidence interval, a summary of your findings with comments, and your R code and output.\
+
+Your findings should be organized in a table, where the columns correspond to the different types of bootstrap confidence intervals and the rows to the coverage probability and the average length for each of the n, M combination. Hence, your table should have 8 rows and 4 columns with clear description of each one. \
+- Using the same parameters as part a, I have simulated the confidence intervals in regards to the population standard deviation rather than the true median of the Weibull distribution. I utilized the same approach as part a for the calculations of coverage probability and average length of the confidence intervals but have replaced the value of interest from the median to the standard deviation. It can be observed that the coverage probabilities were relatively high across all four types of bootstrap. However, as the sample size increased, the coverage probability also increased, indicating that the larger sample size provides more accurate estimates. The average length of the CIs were relatively similar across all four types, however the larger sample size resulted in shorter lengths. This indicates that the larger sample size was more effective in capturing the variability within the data. It also can be noted that the Normal and Studentized seem to result in better coverage probabilities at smaller sample sizes but the Basic bootstrap confidence interval seemed to perform better than the rest at larger sample sizes.  
+
+# Problem 2:
+Consider the following regression model with n observations and p predictor variables, given by: $y_i = x_i^{\top} \beta + \epsilon_i, i = 1, ... n,$ \
+where $y_i \in \mathbb{R}$ contains the i-th observation of the response variable, $x_i \in \mathbb{R}^p$ is a p-dimensional vector containing the i-th observation for the predictors. \
+Note that this regression model **does not contain an intercept term**.
+
+
+## Part (a):
+Generate a data set of size n = 100000 for p = 20 predictors, where:
+- 1. all entries of the true regression coefficient $\beta_{true}$ are equal to 3
+- 2. all p predictors have mean 0 and their correlation matrix is determined y the following R commmands: \
+```{r}
+# R = matrix(c(rep(0.99, p/2), rep(0.9, p/2)), p, p)
+# diag(R) = 1
+# R = (R + t(R)) / 2
+```
+- 3. the error term is normally distributed, with mean 0 and **standard deviation 1.25**.
+
+```{r}
+library(MASS) 
+# Set parameters
+n <- 100000    
+p <- 20        
+beta_true <- rep(3, p)  
+sigma <- 1.25           
+# Define the correlation matrix
+R <- matrix(c(rep(0.99, p/2), rep(0.9, p/2)), p, p)
+diag(R) <- 1 
+R <- (R + t(R)) / 2  
+# Generate the predictor variables X
+set.seed(100) 
+design <- mvrnorm(n, mu = rep(0, p), Sigma = R)
+# Generate the error terms
+error.term <- rnorm(n, mean = 0, sd = sigma)
+# Generate the response variable y
+response <- design %*% beta_true + error.term 
+# Combining X and y into a data frame
+data <- as.data.frame(cbind(response, design))
+
+names(data) <- c("y", paste("X", 1:p, sep=""))
+```
+
+
+## Part (b):
+Estimate the regression coefficient $\hat \beta$ using the gradient descent algorithm and compare the estimate to the one obtained y the least squares method. \
+```{r}
+# Gradient Descent:
+# Define the gradient
+gradient <- function(X, y, beta) {
+  -2 * t(X) %*% (y - X %*% beta) / nrow(X)
+}
+# Gradient descent function for regression
+gradient_descent <- function(X, y, beta_init, stepsize, max_iter, tolerance) {
+  beta <- beta_init
+  n <- nrow(X)
+  
+  for (i in 1:max_iter) {
+    # Calculate the gradient
+    grad <- gradient(X, y, beta)
+    
+    # Update the coefficients
+    beta_new <- beta - stepsize * grad
+    
+    # Check for convergence
+    if (sqrt(sum((beta_new - beta)^2)) < tolerance) {
+      cat("Converged at iteration:", i, "\n")
+      break
+    }
+    beta <- beta_new
+  }
+  
+  return(beta)
+}
+beta_init <- rep(0, p)
+my_stepsize <- 0.01
+max_iter <- 16000
+tolerance <- 1e-6  
+
+# Run gd
+estimated_beta <- gradient_descent(design, response, beta_init, my_stepsize, max_iter, tolerance)
+print(estimated_beta)
+
+# OLS:
+X <- design
+y <- response
+lm_model <- lm(y ~ X - 1)
+summary(lm_model)
+```
+
+Further, discuss how you selected the step size, and comment on the number of iterations required and the accuracy of the estimated regression coefficients compared to the least squares solution. \
+- I have selected a stepsize of 0.01 as it balances the speed and accuracy of the convergence. I also have set a maximum number of iterations as 30000 with a tolerance of 1e-6, but the algorithm is observed to converge after roughly 15000 iterations. The maximum number of iterations allows the gradient descent to near convergence with the set tolerance. However, if we would like more accurate results at the cost of convergence speed, we can set the maximum number of iterations to a larger value and the tolerance parameter to a smaller value. In comparison to the least squares solution, it can be seen that gradient descent has slightly more variability but remains close to the true beta value of 3. In the OLS method, it can be observed that all predictors are close to the true values with great accuracy which is reflected by the low standard error and high t-values. 
+
+## Part (c):
+Note that by construction, the predictors are very highly correlated and hence the condition number of the $X^\top X$ matrix is large. \
+In such settings, it is known that a momentum adjustment of the gradient descent algorithm is helpful. Use the gradient descent algorithm with Polyak's heavy ball method and Nesterov's momentum method to obtain an estimate of the regression coefficients and compare it to your answers in Part (b). \
+```{r}
+# Polyak GD
+polyakGD <- function(X, y, beta_init, stepsize, gamma, max_iter, tolerance) {
+    beta <- beta_init
+    beta_prev <- beta_init  # Previous beta for momentum term
+    n <- nrow(X)
+
+    for (i in 1:max_iter) {
+        grad <- gradient(X, y, beta)
+        # from hw5
+        beta_new <- beta - stepsize * grad + gamma * (beta - beta_prev)
+
+        # Convergence check
+        if (sqrt(sum((beta_new - beta)^2)) < tolerance) {
+            cat("Convergence achieved at iteration", i, "\n")
+            break
+        }
+
+        beta_prev <- beta
+        beta <- beta_new
+    }
+
+  return(list(beta = beta, iterations = i))
+}
+# Nesterov GD
+nesterovGD <- function(X, y, beta_init, stepsize, gamma, max_iter, tolerance) {
+  beta <- beta_init
+  v <- rep(0, length(beta_init))
+  n <- nrow(X)
+
+  for (i in 1:max_iter) {
+    # from hw5
+    beta_lookahead <- beta - gamma * v
+    grad <- gradient(X, y, beta_lookahead)
+    
+    v_new <- gamma * v + stepsize * grad
+    beta_new <- beta - v_new
+
+    if (sqrt(sum((beta_new - beta)^2)) < tolerance) {
+      cat("Convergence achieved at iteration", i, "\n")
+      break
+    }
+
+    v <- v_new
+    beta <- beta_new
+  }
+  
+  return(list(beta = beta, iterations = i))
+}
+beta_init <- rep(0, p)
+my_stepsize <- 0.01
+max_iter <- 3000
+tolerance <- 1e-6  
+gamma <- 0.9 # Using from hw5 - tau not needed if no bls
+
+results_polyak <- polyakGD(design, response, beta_init, my_stepsize, gamma, max_iter, tolerance)
+results_nesterov <- nesterovGD(design, response, beta_init, my_stepsize, gamma, max_iter, tolerance)
+
+# names(results_polyak) <- paste("X", 1:20, sep="")
+# names(results_nesterov) <- paste("X", 1:20, sep="")
+cat("Polyak's Heavy Ball Results:\n")
+print(results_polyak)
+cat("\nNesterov's Momentum Results:\n")
+print(results_nesterov)
+
+beta_ols <- coef(lm_model)
+names(beta_ols) <- paste("X", 1:20, sep="")
+cat("OLS Results:\n")
+print(beta_ols)
+```
+
+
+Specifically, discuss how you selected the step size, and comment on the number of iterations required and the accuracy of the estimated regression coefficients compared to the least squares solution and those obtained by the standard gradient descent algorithm used in Part(b).\
+- For part (c), I decided to use the same step size from part (b) to maintain both computational efficiency and speed. Additionally, I have selected the maximum number of iterations as 3000 and a tolerance of 1e-6 to also facilitate the efficiency and accuracy of the results as the algorithms both converge at roughly 2700 iterations. It can be observed that both the Polyak's Heavy Ball method and Nesterov's momentum method result in estimated regression coefficients that are very similar to the OLS method. This indicates that both methods are quicker and more accurate in convergence due to the momentum terms which accelrate convergence when compared to the standard gradient descent algorithm. 
+
+## Part (d):
+Given the large number of observations, a fellow data scientist advised you to use the **stochastic gradient descent** algorithm with **Polyak's heavt ball adjustment** and **Nesterov's momentum method** with **mini batch size set to Q = 2000 observations**.\
+Implement the **stochastic gradient descent method with Polyak's heavy ball adjustment and Nesterov's momentum method** to obtain the estimates of the regression coefficients. \
+
+```{r}
+# Stochastic GD w/ Polyak
+SGD_Polyak <- function(y, X, startpoint, stepsize, gamma, mb_size, max_iter, tolerance) {
+  beta <- startpoint
+  beta_prev <- beta 
+  n <- length(y)
+  indices <- 1:n
+
+  for (i in 1:max_iter) {
+    # Mini-batch selection
+    idx <- sample(indices, mb_size, replace = FALSE)
+    Xs <- X[idx, ]
+    ys <- y[idx]
+
+    # Gradient computation
+    grad <- t(Xs) %*% (Xs %*% beta - ys) / mb_size
+
+    # Update beta with momentum
+    beta_new <- beta - stepsize * grad + gamma * (beta - beta_prev)
+    
+    # Convergence check
+    if (sqrt(sum((beta_new - beta)^2)) < tolerance) {
+      cat("Convergence achieved at iteration", i, "\n")
+      break
+    }
+
+    beta_prev <- beta
+    beta <- beta_new
+  }
+
+  return(list(beta = beta, iterations = i))
+}
+
+# Stochastic GD w/ Nesterov
+SGD_Nesterov <- function(y, X, startpoint, stepsize, gamma, mb_size, max_iter, tolerance) {
+  beta <- startpoint
+  v <- rep(0, length(beta))  # Velocity term
+
+  for (i in 1:max_iter) {
+    # Mini-batch selection
+    idx <- sample(1:length(y), mb_size, replace = FALSE)
+    Xs <- X[idx, ]
+    ys <- y[idx]
+
+    # Lookahead
+    beta_lookahead <- beta - gamma * v
+
+    # Gradient computation
+    grad <- t(Xs) %*% (Xs %*% beta_lookahead - ys) / mb_size
+
+    # Update velocity and beta
+    v <- gamma * v + stepsize * grad
+    beta_new <- beta - v
+
+    # Convergence check
+    if (sqrt(sum((beta_new - beta)^2)) < tolerance) {
+      cat("Convergence achieved at iteration", i, "\n")
+      break
+    }
+
+    beta <- beta_new
+  }
+
+  return(list(beta = beta, iterations = i))
+}
+
+beta_init <- rep(0, p)
+my_stepsize <- 0.01
+max_iter <- 30000
+tolerance <- 1e-6  
+gamma <- 0.9 # Using from hw5 - tau not needed if no bls
+Q <- 2000
+
+results_sgd_polyak <- SGD_Polyak(response, design, beta_init, my_stepsize, gamma, Q, max_iter, tolerance)
+results_sgd_nesterov <- SGD_Nesterov(response, design, beta_init, my_stepsize, gamma, Q, max_iter, tolerance)
+
+print("Results with Stochastic Polyak's Heavy Ball:")
+print(results_sgd_polyak)
+print("Results with Stochastic Nesterov's Momentum:")
+print(results_sgd_nesterov)
+```
+
+
+Discuss how you selected the step size, and comment on the number of iterations required and the accuracy of the estimated regression coefficients compared to the least squares solution and those obtained by the standard gradient descent algorithm used in Part (b) and the gradient descent algorithm with Polyak's heavy ball adjustment and Nesterov's momentum in Part (c). \
+- Similar to parts a and b, I have selected a step size of 0.01 to maintain both accuracy and efficiency. This value is also a great in terms of combating overshooting with the stochastic gradient descent method, resulting in relatively accurate results. It can be observed that the maximum number of iterations is set to 30000 and a tolerance of 1e-6, which facilitates the accuracy and efficiency of the algorithm as the values near convergence. Although the algorithm did not reach convergence within the set maximum iteration parameter, the estimated coefficients can be observed as being relatively accurate due to the values nearing the true value of 3. In comparison to the other results in part b and c, the speed of this algorithm was much faster suggesting it can handle a larger number of iterations, or even the full dataset,  but with less accuracy if it were to perform within the same number of iterations as the parts b and c due to the minimal change in values between iterations. 
+
+
